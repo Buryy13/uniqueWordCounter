@@ -5,3 +5,8 @@ project(uniqwordcount VERSION 1.0)
 
 # add the executable
 add_executable(uniqwordcount main.cpp)
+
+set_target_properties(uniqwordcount PROPERTIES
+	    		CXX_STANDARD 17
+	        	CXX_STANDARD_REQUIRED OFF
+		    	CXX_EXTENSIONS OFF)
