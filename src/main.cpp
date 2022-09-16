@@ -5,11 +5,15 @@
 #include <cstdio>
 #include <set>
 #include <string>
+#include <vector>
 #include <algorithm>
 #include <iterator>
 #include <string_view>
+#include <thread>
+#include <unistd.h>
 
 static const size_t MAX_LETTER_COUNT = 50;
+static const int BUFFER_SIZE = sysconf(_SC_PAGE_SIZE); 
 
 void nullTheWord(char* word, size_t bound)
 {
@@ -18,60 +22,87 @@ void nullTheWord(char* word, size_t bound)
 		word[i] = '\0';
 	}
 }
-
+class FileReader
+{
+public:
+	FileReader(const char* fName);
+	~FileReader();
+	bool initialize();
+	struct Chunk
+	{
+		std::set<std::string> words;
+		std::string firstWord;
+		std::string lastWord;
+		int inst;
+	};
+	void readChunks();
+	void handleChunk(int fd, int i);
+private:
+	const char* fileName;
+	int fd;
+	size_t fileSize = -1;
+	std::vector<std::thread> threads;
+	int numOfChunks;
+};
+FileReader::FileReader(const char* fName)
+{
+	fileName = fName;
+}
+FileReader::~FileReader()
+{
+	for(auto& t : threads) t.join();
+}
+bool FileReader::initialize()
+{
+	// open file for reading
+	fd = open(fileName, O_RDONLY);
+	if(fd == -1)
+	{
+		std::cout << "ERROR: could not open the file for reading!" << std::endl;
+		return false;
+	}
+	// get file size
+	struct stat status;
+	if(fstat(fd, &status) == -1)
+	{
+		std::cout << "ERROR: could not fetch stat of the file!" << std::endl;
+		return false;
+	}
+	fileSize = status.st_size;
+	numOfChunks = fileSize / BUFFER_SIZE; 
+	if(fileSize % BUFFER_SIZE) numOfChunks++;
+	return true;
+}
+void FileReader::readChunks()
+{
+	for(int i = 0; i < numOfChunks; ++i)
+	{
+		threads.emplace_back(&FileReader::handleChunk, this, fd, i);
+	}
+}
+void FileReader::handleChunk(int fd, int i)
+{
+	char* mapped = reinterpret_cast<char*>(mmap(nullptr, BUFFER_SIZE, PROT_READ, MAP_PRIVATE, fd, i*BUFFER_SIZE));
+	std::string_view myStr(mapped, BUFFER_SIZE); 
+	std::cout << "string view number " << i << ": " << myStr << std::endl;
+	munmap(mapped, BUFFER_SIZE); 
+}
 int main(int argc, const char* argv[])
 {
-	struct stat status;
-	size_t size = -1;
-	std::set<std::string> words;
-	char* word = new char[MAX_LETTER_COUNT];
-	char* pc=word;
-
 	if (argc != 2)
 	{
-		std::cout << "error: bad arguments!" << std::endl;
+		std::cout << "ERROR: bad arguments!" << std::endl;
 		return -1;
 	}
-
-	const char* file_name = argv[1];
-	int fd = open(file_name, O_RDONLY);
-
-	// get file size
-	fstat(fd, &status);
-	size = status.st_size;
-
-	size_t portion = size / 2;
-	char* mapped = nullptr;
-	mapped = reinterpret_cast<char*>(mmap(mapped, 10, PROT_READ, MAP_PRIVATE, fd, 0));
-	//std::string_view myStr(mapped, size); 
-	//std::cout << "string view: \n" << myStr << std::endl;
-	std::cout << "First part: " << std::endl;
-
-	for (int i = 0; i < 10; ++i)
+	FileReader fileReader(argv[1]);
+	if(!fileReader.initialize())
 	{
-		char c = mapped[i];
-		putchar(c);
-		/*if(c != ' ')
-		{
-			*pc++ = c;
-		}
-		else
-		{
-			words.insert({word});
-			nullTheWord(word, pc-word);
-			pc = word;
-		}*/
+		std::cout << "ERROR: could not initialize data!" << std::endl;
+		return -1;
 	}
-	//words.insert({word});
-	std::cout << "\nSecond part" << std::endl;
-	char * new_mapped = reinterpret_cast<char*>(mmap(mapped, 10, PROT_READ, MAP_PRIVATE, fd, 1));
-	for (int i = 0; i < 10; ++i)
-	{
-		char c = new_mapped[i];
-		putchar(c);
-	}
-	std::cout << std::endl;
-	std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(std::cout, " "));
-	std::cout << "\nSize of set: " << words.size() << std::endl;
+	fileReader.readChunks();
+	
+	//std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(std::cout, " "));
+
 	return 0;
 }
