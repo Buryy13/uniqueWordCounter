@@ -12,6 +12,7 @@
 #include <thread>
 #include <unistd.h>
 
+#include <fstream>
 #include "threadsafe_queue.h"
 
 static const int BUFFER_SIZE = sysconf(_SC_PAGE_SIZE); 
@@ -24,12 +25,13 @@ public:
 	bool initialize();
 	void readFile();
 	void readChunk(int fd, int i);
+	void fixCorruptedWords();
 	struct Chunk
 	{
 		std::set<std::string> words;
 		std::string firstWord;
 		std::string lastWord;
-		int inst;
+		int identifier;
 	};
 private:
 	const char* fileName;
@@ -38,6 +40,7 @@ private:
 	std::vector<std::thread> threads;
 	int numOfChunks;
 	ThreadSafeQueue<Chunk> chunks;
+    std::set<std::string> words;
 };
 FileReader::FileReader(const char* fName)
 {
@@ -46,6 +49,7 @@ FileReader::FileReader(const char* fName)
 FileReader::~FileReader()
 {
 	for(auto& t : threads) t.join();
+    close(fd);
 }
 bool FileReader::initialize()
 {
@@ -78,10 +82,61 @@ void FileReader::readFile()
 void FileReader::readChunk(int fd, int i)
 {
 	char* mapped = reinterpret_cast<char*>(mmap(nullptr, BUFFER_SIZE, PROT_READ, MAP_PRIVATE, fd, i*BUFFER_SIZE));
-	std::string_view stringChunk(mapped, BUFFER_SIZE); 
-	//std::cout << "string view number " << i << ": " << myStr << std::endl;
-	
+	std::string strChunk(mapped, BUFFER_SIZE); 
+	Chunk chunk;
+    size_t firstSpaceIndx = strChunk.find_first_of(' ');
+    size_t lastSpaceIndx = strChunk.find_last_of(' ');
+
+    chunk.firstWord = strChunk.substr(0, firstSpaceIndx);
+    chunk.lastWord = strChunk.substr(lastSpaceIndx+1);
+    if(chunk.lastWord.find("\n") != std::string::npos)
+    {
+        chunk.lastWord.erase(chunk.lastWord.find_first_of('\n'));
+    }
+	chunk.identifier = i;
+
+    std::string stringWords = strChunk.substr(firstSpaceIndx, lastSpaceIndx-firstSpaceIndx+1); // string of words formed from the chunk without first and last words (starting and ending with space)
+    while(stringWords.compare(" ") != 0)
+    {
+        stringWords.erase(0, 1); // rid off space
+        std::string word = stringWords.substr(0, stringWords.find_first_of(' '));
+        chunk.words.insert(word);
+        stringWords.erase(0, stringWords.find_first_of(' ')); // rid off word
+    }
+	chunks.push(chunk);
 	munmap(mapped, BUFFER_SIZE); 
+}
+void FileReader::fixCorruptedWords()
+{
+    auto cmp = [](Chunk a, Chunk b){return a.identifier < b.identifier;};
+    std::set<Chunk, decltype(cmp)> chunksToFix(cmp);
+    //std::ofstream out("output.txt", std::ios::out);
+    // sort chunks by identifier
+	for(int i = 0; i < numOfChunks; ++i)
+	{
+		Chunk chunk;
+		chunks.try_pop(chunk);
+        chunksToFix.insert(chunk); 
+        // store chunk words into main set of words
+        for(auto word : chunk.words) 
+        {
+            words.insert(std::move(word));
+        }
+	}
+    // adding first and last words
+    auto it = chunksToFix.begin();
+    auto it2 = std::next(it, 1);
+    words.insert(it->firstWord);
+    while(it2 != chunksToFix.end())
+    {
+        std::string word = it->lastWord + it2->firstWord;
+        words.insert(word);
+        it++;
+        it2++;
+    }
+    words.insert(it->lastWord);
+	//std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(out, "\n"));
+    std::cout << "\nSize of words: " << words.size() << std::endl;
 }
 int main(int argc, const char* argv[])
 {
@@ -97,7 +152,9 @@ int main(int argc, const char* argv[])
 		return -1;
 	}
 	fileReader.readFile();
-	
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+	fileReader.fixCorruptedWords();
+    
 	//std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(std::cout, " "));
 
 	return 0;
