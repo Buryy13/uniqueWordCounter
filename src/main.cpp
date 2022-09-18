@@ -26,12 +26,15 @@ public:
 	void readFile();
 	void readChunk(int fd, int i);
 	void fixCorruptedWords();
+    void printWordsSize(){
+		std::cout << "\nSize of words: " << words.size() << std::endl;
+	}
 	struct Chunk
 	{
 		std::set<std::string> words;
 		std::string firstWord;
 		std::string lastWord;
-		int identifier;
+		int id;
 	};
 private:
 	const char* fileName;
@@ -83,17 +86,19 @@ void FileReader::readChunk(int fd, int i)
 {
 	char* mapped = reinterpret_cast<char*>(mmap(nullptr, BUFFER_SIZE, PROT_READ, MAP_PRIVATE, fd, i*BUFFER_SIZE));
 	std::string strChunk(mapped, BUFFER_SIZE); 
+
 	Chunk chunk;
     size_t firstSpaceIndx = strChunk.find_first_of(' ');
     size_t lastSpaceIndx = strChunk.find_last_of(' ');
 
     chunk.firstWord = strChunk.substr(0, firstSpaceIndx);
     chunk.lastWord = strChunk.substr(lastSpaceIndx+1);
+	// erase '\n' from the very last word
     if(chunk.lastWord.find("\n") != std::string::npos)
     {
         chunk.lastWord.erase(chunk.lastWord.find_first_of('\n'));
     }
-	chunk.identifier = i;
+	chunk.id = i;
 
     std::string stringWords = strChunk.substr(firstSpaceIndx, lastSpaceIndx-firstSpaceIndx+1); // string of words formed from the chunk without first and last words (starting and ending with space)
     while(stringWords.compare(" ") != 0)
@@ -108,10 +113,10 @@ void FileReader::readChunk(int fd, int i)
 }
 void FileReader::fixCorruptedWords()
 {
-    auto cmp = [](Chunk a, Chunk b){return a.identifier < b.identifier;};
+    auto cmp = [](Chunk a, Chunk b){return a.id < b.id;};
     std::set<Chunk, decltype(cmp)> chunksToFix(cmp);
     //std::ofstream out("output.txt", std::ios::out);
-    // sort chunks by identifier
+    // sort chunks by id
 	for(int i = 0; i < numOfChunks; ++i)
 	{
 		Chunk chunk;
@@ -136,7 +141,6 @@ void FileReader::fixCorruptedWords()
     }
     words.insert(it->lastWord);
 	//std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(out, "\n"));
-    std::cout << "\nSize of words: " << words.size() << std::endl;
 }
 int main(int argc, const char* argv[])
 {
@@ -148,13 +152,13 @@ int main(int argc, const char* argv[])
 	FileReader fileReader(argv[1]);
 	if(!fileReader.initialize())
 	{
-		std::cout << "ERROR: could not initialize data!" << std::endl;
+		std::cout << "ERROR: could not initialize the process!" << std::endl;
 		return -1;
 	}
 	fileReader.readFile();
-	std::this_thread::sleep_for(std::chrono::seconds(1));
+	std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	fileReader.fixCorruptedWords();
-    
+    fileReader.printWordsSize();
 	//std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(std::cout, " "));
 
 	return 0;
