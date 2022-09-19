@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <cstdio>
 #include <set>
+#include <unordered_set>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -13,47 +14,47 @@
 #include <string_view>
 #include <thread>
 #include <unistd.h>
+#include <future>
 
 #include <fstream>
 #include "threadsafe_queue.h"
 
 static const int BUFFER_SIZE = sysconf(_SC_PAGE_SIZE); 
-
 class FileReader
 {
 public:
-	FileReader(const char* fName);
-	~FileReader();
-	bool initialize();
-	void readFile();
-	void readChunk(int fd, int i);
-	void fixCorruptedWords();
-    void printWordsSize(){
-		std::cout << "\nSize of words: " << words.size() << std::endl;
-	}
 	struct Chunk
 	{
-		std::set<std::string> words;
+		std::unordered_set<std::string> words;
 		std::string firstWord;
 		std::string lastWord;
 		int id;
 	};
+	FileReader(const char* fName);
+	~FileReader();
+	bool initialize();
+	void readFile();
+	Chunk readChunk(int fd, int i);
+	void fixCorruptedWords();
+	void mergeWords();
+    void printWordsSize(){
+		std::cout << "\nSize of words: " << finalWords.size() << std::endl;
+	}
 private:
 	const char* fileName;
 	int fd;
 	size_t fileSize = -1;
-	std::vector<std::thread> threads;
 	int numOfChunks;
-	ThreadSafeQueue<Chunk> chunks;
-    std::set<std::string> words;
+	std::set<Chunk, std::function<bool(const Chunk&, const Chunk&)>> chunks;
+    std::unordered_set<std::string> finalWords;
+	std::vector<std::future<Chunk>> futureChunks;
 };
-FileReader::FileReader(const char* fName)
+FileReader::FileReader(const char* fName) : chunks([this](const Chunk& lhs, const Chunk& rhs){return lhs.id < rhs.id;})
 {
 	fileName = fName;
 }
 FileReader::~FileReader()
 {
-	for(auto& t : threads) t.join();
     close(fd);
 }
 bool FileReader::initialize()
@@ -81,14 +82,20 @@ void FileReader::readFile()
 {
 	for(int i = 0; i < numOfChunks; ++i)
 	{
-		threads.emplace_back(&FileReader::readChunk, this, fd, i);
+		//threads.emplace_back(&FileReader::readChunk, this, fd, i);
+		futureChunks.emplace_back(std::async(&FileReader::readChunk, this, fd, i));
 	}
 }
-void FileReader::readChunk(int fd, int i)
+FileReader::Chunk FileReader::readChunk(int fd, int i)
 {
-	char* mapped = reinterpret_cast<char*>(mmap(nullptr, BUFFER_SIZE, PROT_READ, MAP_PRIVATE, fd, i*BUFFER_SIZE));
-	std::string strChunk(mapped, BUFFER_SIZE); 
-	if(mapped == MAP_FAILED) std::cout << "ERROR: mapping failed!" << std::endl;
+	void* mapped = mmap(nullptr, BUFFER_SIZE, PROT_READ, MAP_PRIVATE, fd, i*BUFFER_SIZE);
+	if(mapped == MAP_FAILED)
+	{
+		std::cout << "ERROR: mapping failed!" << std::endl;
+		// TODO: throw;
+	}
+		
+	std::string strChunk(reinterpret_cast<char*>(mapped), BUFFER_SIZE); 
 	Chunk chunk;
     size_t firstSpaceIndx = strChunk.find_first_of(' ');
     size_t lastSpaceIndx = strChunk.find_last_of(' ');
@@ -96,13 +103,13 @@ void FileReader::readChunk(int fd, int i)
     chunk.firstWord = strChunk.substr(0, firstSpaceIndx);
     chunk.lastWord = strChunk.substr(lastSpaceIndx+1);
 	// erase '\n' from the very last word
-    if(chunk.lastWord.find("\n") != std::string::npos)
+    if(i == numOfChunks-1 && chunk.lastWord.find("\n") != std::string::npos)
     {
         chunk.lastWord.erase(chunk.lastWord.find_first_of('\n'));
     }
 	chunk.id = i;
-
-    std::string stringWords = strChunk.substr(firstSpaceIndx, lastSpaceIndx-firstSpaceIndx+1); // string of words formed from the chunk without first and last words (starting and ending with space)
+	// string of words formed from the chunk without first and last words (starting and ending with space)
+    std::string stringWords = strChunk.substr(firstSpaceIndx, lastSpaceIndx-firstSpaceIndx+1); 
     while(stringWords.compare(" ") != 0)
     {
         stringWords.erase(0, 1); // rid off space
@@ -110,37 +117,39 @@ void FileReader::readChunk(int fd, int i)
         chunk.words.insert(word);
         stringWords.erase(0, stringWords.find_first_of(' ')); // rid off word
     }
-	chunks.push(chunk);
 	munmap(mapped, BUFFER_SIZE); 
+	return chunk;
 }
 void FileReader::fixCorruptedWords()
 {
-    auto cmp = [](Chunk a, Chunk b){return a.id < b.id;};
-    std::set<Chunk, decltype(cmp)> chunksToFix(cmp);
-    std::ofstream out("output.txt", std::ios::out);
+    //auto cmp = [](const Chunk& a, const Chunk& b){return a.id < b.id;};
+    //std::set<Chunk, decltype(cmp)> sortedChunks(cmp);
     // sort chunks by id
 	for(int i = 0; i < numOfChunks; ++i)
 	{
-		Chunk chunk;
-		chunks.try_pop(chunk);
-        chunksToFix.insert(chunk); 
-        // store chunk words into main set of words
-        for(auto word : chunk.words) 
-        {
-            words.insert(std::move(word));
-        }
+		Chunk chunk = futureChunks[i].get();
+		chunks.insert(chunk);
 	}
     // adding first and last words
-    auto it = chunksToFix.begin();
+    auto it = chunks.begin();
     auto it2 = std::next(it, 1);
-    words.insert(it->firstWord);
-    while(it2 != chunksToFix.end())
+    finalWords.insert(it->firstWord);
+    while(it2 != chunks.end())
     {
         std::string word = it->lastWord + it2->firstWord;
-        words.insert(word);
-        it++;
-        it2++;
+        finalWords.insert(word);
+        it++; it2++;
     }
-    words.insert(it->lastWord);
-	std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(out, "\n"));
+    finalWords.insert(it->lastWord);
+}
+void FileReader::mergeWords()
+{
+    //std::ofstream out("output.txt", std::ios::out);
+	// store chunk words into main set of words
+	//auto it = chunks.begin();
+	//auto it2 = std::next(it, 1);
+	for(auto& chunk : chunks)
+    	for(auto word : chunk.words) 
+        	finalWords.insert(std::move(word));
+	//std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(out, "\n"));
 }
