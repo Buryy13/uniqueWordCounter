@@ -11,7 +11,6 @@
 #include <vector>
 #include <algorithm>
 #include <iterator>
-#include <string_view>
 #include <thread>
 #include <unistd.h>
 #include <future>
@@ -102,11 +101,13 @@ FileReader::Chunk FileReader::readChunk(int fd, int i)
 
     chunk.firstWord = strChunk.substr(0, firstSpaceIndx);
     chunk.lastWord = strChunk.substr(lastSpaceIndx+1);
-	// erase '\n' from the very last word
-    if(i == numOfChunks-1 && chunk.lastWord.find("\n") != std::string::npos)
-    {
-        chunk.lastWord.erase(chunk.lastWord.find_first_of('\n'));
-    }
+	// erase extra symbols from the very last word
+	if(i == numOfChunks-1) 
+	{
+		auto itrNotAlpha = chunk.lastWord.find_first_not_of("abcdefghijklmnopqrstuvwxyz");
+		if(itrNotAlpha != std::string::npos)
+			chunk.lastWord.erase(itrNotAlpha);
+	}
 	chunk.id = i;
 	// string of words formed from the chunk without first and last words (starting and ending with space)
     std::string stringWords = strChunk.substr(firstSpaceIndx, lastSpaceIndx-firstSpaceIndx+1); 
@@ -151,5 +152,5 @@ void FileReader::mergeWords()
 	for(auto& chunk : chunks)
     	for(auto word : chunk.words) 
         	finalWords.insert(std::move(word));
-	//std::copy(words.begin(), words.end(), std::ostream_iterator<std::string>(out, "\n"));
+	//std::copy(finalWords.begin(), finalWords.end(), std::ostream_iterator<std::string>(out, "\n"));
 }
