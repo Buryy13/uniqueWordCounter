@@ -8,7 +8,7 @@ int main(int argc, const char* argv[])
 		return -1;
 	}
 	FileReader fileReader(argv[1]);
-	if(!fileReader.initialize())
+	if (!fileReader.initialize())
 	{
 		std::cout << "ERROR: could not initialize the process!" << std::endl;
 		return -1;

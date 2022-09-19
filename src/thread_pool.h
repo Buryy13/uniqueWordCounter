@@ -7,12 +7,12 @@
 class JoinThreads
 {
 public:
-	explicit JoinThreads(std::vector<std::thread>& threads_) : threads(threads_){}
+	explicit JoinThreads(std::vector<std::thread>& threads_) : threads(threads_) {}
 	~JoinThreads()
 	{
-		for(unsigned long i = 0; i < threads.size(); ++i)
+		for (unsigned long i = 0; i < threads.size(); ++i)
 		{
-			if(threads[i].joinable)
+			if (threads[i].joinable)
 				threads[i].join();
 		}
 	}
@@ -40,12 +40,12 @@ ThreadPool::ThreadPool() : done(false), joiner(threads)
 	const unsigned threadCount = std::thread::hardware_concurrency();
 	try
 	{
-		for(unsigned i = 0; i < threadCount; ++i)
+		for (unsigned i = 0; i < threadCount; ++i)
 		{
 			threads.emplace_back(&ThreadPool::workerThread, this);
 		}
-	}	
-	catch(...)
+	}
+	catch (...)
 	{
 		done = true;
 		throw;
