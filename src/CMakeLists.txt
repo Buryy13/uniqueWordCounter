@@ -3,9 +3,14 @@ cmake_minimum_required(VERSION 3.10)
 # set the project name 
 project(uniqwordcount VERSION 1.0)
 
+file(GLOB SOURCES
+    *.h
+    *.cpp
+)
 # add the executable
-add_executable(uniqwordcount main.cpp)
-
+add_executable(uniqwordcount ${SOURCES})
+set(TARGET_H file_reader.h)
+set(TARGET_SRC file_reader.cpp)
 set_target_properties(uniqwordcount PROPERTIES
 	    		CXX_STANDARD 17
 	        	CXX_STANDARD_REQUIRED OFF
