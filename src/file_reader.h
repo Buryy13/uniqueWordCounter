@@ -1,12 +1,12 @@
 #pragma once
 
-#include <set>
 #include <unordered_set>
 #include <string>
 #include <vector>
+#include <list>
 #include <future>
 
-#include "threadsafe_queue.h"
+#include "thread_pool.h"
 
 class FileReader
 {
@@ -17,22 +17,32 @@ public:
 		std::string firstWord;
 		std::string lastWord;
 		int id;
+
+		bool operator<(const Chunk& rhs) const { return id < rhs.id; }
 	};
+	using ListItr = std::list<Chunk>::iterator;
 	FileReader(const char* fName);
 	~FileReader();
+
 	bool initialize();
 	void readFile();
-	Chunk readChunk(int fd, int i);
 	void fixCorruptedWords();
 	void mergeWords();
-	void printWordsSize();
+	void printUniqueWordsNumber();
+
 private:
+	Chunk readChunk(int i);
+	ListItr recursiveMerge(ListItr begin, ListItr end);
+	template<typename T>
+	std::list<T> parallelQuickSort(std::list<T> chunks);
+
 	const char* fileName;
 	int fd;
-	size_t fileSize = -1;
+	size_t fileSize;
 	size_t bufferSize;
-	int numOfChunks;
-	std::set<Chunk, std::function<bool(const Chunk&, const Chunk&)>> chunks;
+	unsigned int numOfChunks;
 	std::unordered_set<std::string> finalWords;
 	std::vector<std::future<Chunk>> futureChunks;
+	std::list<Chunk> chunks;
+	ThreadPool threadPool;
 };
