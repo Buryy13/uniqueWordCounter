@@ -9,11 +9,9 @@ file(GLOB SOURCES
 )
 # add the executable
 add_executable(uniqwordcount ${SOURCES})
-#set(TARGET_H file_reader.h)
-#set(TARGET_SRC file_reader.cpp)
 set_target_properties(uniqwordcount PROPERTIES
-	    		CXX_STANDARD 17
-	        	CXX_STANDARD_REQUIRED OFF
-		    	CXX_EXTENSIONS OFF)
+									CXX_STANDARD 17
+									CXX_STANDARD_REQUIRED OFF
+									CXX_EXTENSIONS OFF)
 find_package( Threads )
 target_link_libraries( uniqwordcount ${CMAKE_THREAD_LIBS_INIT} )

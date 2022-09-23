@@ -1,17 +1,20 @@
-#include "file_reader.h"
 
-#include <iostream>
 #include <algorithm>
-#include <thread>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <fcntl.h>
 #include <cstdio>
+#include <fcntl.h>
 #include <fstream>
 #include <functional>
+#include <iostream>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <thread>
+#include <unistd.h>
 
-static const std::string ALPHABET{"abcdefghijklmnopqrstuvwxyz"};
+#include "file_reader.h"
+
+static const std::string& ALPHABET{"abcdefghijklmnopqrstuvwxyz"};
+static const char& SPACE_CHAR(' ');
+static const std::string& SPACE_STR(" ");
 
 FileReader::FileReader(const char* fName) :
   fileName(fName)
@@ -42,8 +45,13 @@ bool FileReader::initialize()
     return false;
   }
   fileSize = status.st_size;
-  // TODO: optimize buffer size coresponding to file size and concurrency
+	// get buffer (page) size
   bufferSize = sysconf(_SC_PAGE_SIZE);
+	if(bufferSize == -1)
+  {
+    std::cout << "ERROR: could not fetch system value of page size!" << std::endl;
+    return false;
+  }
   numOfChunks = fileSize / bufferSize;
   if (fileSize % bufferSize) numOfChunks++;
 	futureChunks.reserve(numOfChunks);
@@ -63,15 +71,15 @@ FileReader::Chunk FileReader::readChunk(int i)
   if (mapped == MAP_FAILED)
   {
     std::cout << "ERROR: mapping failed!" << std::endl;
-    // TODO: throw;
+    throw;
   }
 
   std::string strChunk(reinterpret_cast<char*>(mapped), bufferSize);
   Chunk chunk;
   chunk.id = i;
 
-  size_t firstSpaceIndx = strChunk.find_first_of(' ');
-  size_t lastSpaceIndx = strChunk.find_last_of(' ');
+  size_t firstSpaceIndx = strChunk.find_first_of(SPACE_CHAR);
+  size_t lastSpaceIndx = strChunk.find_last_of(SPACE_CHAR);
 
   chunk.firstWord = strChunk.substr(0, firstSpaceIndx);
   chunk.lastWord = strChunk.substr(lastSpaceIndx + 1);
@@ -85,12 +93,12 @@ FileReader::Chunk FileReader::readChunk(int i)
 	// parsing the chunk of words
   // string of words formed from the chunk without first and last words (starting and ending with space)
   std::string stringWords = strChunk.substr(firstSpaceIndx, lastSpaceIndx - firstSpaceIndx + 1);
-  while (stringWords.compare(" ") != 0)
+  while (stringWords.compare(SPACE_STR) != 0)
   {
     stringWords.erase(0, 1); // rid off space
-    std::string word = stringWords.substr(0, stringWords.find_first_of(' '));
+    std::string word = stringWords.substr(0, stringWords.find_first_of(SPACE_CHAR));
     chunk.words.insert(word);
-    stringWords.erase(0, stringWords.find_first_of(' ')); // rid off word
+    stringWords.erase(0, stringWords.find_first_of(SPACE_CHAR)); // rid off word
   }
   munmap(mapped, bufferSize);
   return chunk;
@@ -102,7 +110,7 @@ void FileReader::fixCorruptedWords()
     chunks.push_back(fu.get());
 
 	// sort list of chunks by id
-	//chunks = parallelQuickSort(chunks);	// much slower than std::sort() of STL
+	//chunks = parallelQuickSort(chunks);	// slower than std::list::sort() of STL
 	chunks.sort();
 
   // adding first and last words
@@ -146,14 +154,8 @@ std::list<T> FileReader::parallelQuickSort(std::list<T> chunks)
 }
 void FileReader::mergeWords()
 {
-  // store chunk words into main set of words
-  /*
-	for (auto& chunk : chunks)
-    for (auto&& word : chunk.words)
-      finalWords.insert(std::move(word));
-  */
 	// merge all words into first chunk and return its iterator
-	FileReader::ListItr it = recursiveMerge(chunks.begin(), chunks.end());
+	auto it = recursiveMerge(chunks.begin(), chunks.end());
 	finalWords.insert(it->words.begin(), it->words.end());
 }
 FileReader::ListItr FileReader::recursiveMerge(ListItr begin, ListItr end)

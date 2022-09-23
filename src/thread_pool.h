@@ -1,14 +1,14 @@
 #pragma once
 
-#include <thread>
 #include <atomic>
-#include <vector>
 #include <functional>
 #include <future>
+#include <thread>
+#include <vector>
 
 #include "threadsafe_queue.h"
 
-// taken from C++ Concurrency in action by A.Williams 
+// taken from book "C++ Concurrency in action" by A.Williams 
 class FunctionWrapper
 {
 	struct impl_base
@@ -39,6 +39,7 @@ public:
 	FunctionWrapper(F&& f) : impl(new impl_type<F>(std::move(f))){}
 	void operator()(){ impl->call(); }
 };
+
 class JoinThreads
 {
 public:
@@ -61,14 +62,8 @@ public:
 	~ThreadPool();
 	template<typename FunctionType, typename... Args>
 	decltype(auto) submit(FunctionType f, Args&&... args);
-	void runPendingTask()
-	{
-		FunctionWrapper task;
-		if(workQueue.try_pop(task))
-			task();
-		else
-			std::this_thread::yield();
-	}
+	void runPendingTask();
+
 private:
 	void workerThread();
 
@@ -80,11 +75,11 @@ private:
 template <typename FunctionType, typename... Args>
 decltype(auto) ThreadPool::submit(FunctionType f, Args&&... args)
 {
-	using return_t = decltype(f(args...));
+  using return_t = decltype(f(args...));
 
-	auto bind_func = std::bind(f, std::forward<Args>(args)...);
-	std::packaged_task<return_t()> task(std::move(bind_func));
-	std::future<return_t> fu(task.get_future());
+  auto bind_func = std::bind(f, std::forward<Args>(args)...);
+  std::packaged_task<return_t()> task(std::move(bind_func));
+  std::future<return_t> fu(task.get_future());
   workQueue.push(std::move(task));
-	return fu;
+  return fu;
 }

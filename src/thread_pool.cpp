@@ -20,6 +20,14 @@ ThreadPool::~ThreadPool()
 {
   done = true;
 }
+void ThreadPool::runPendingTask()
+{
+  FunctionWrapper task;
+  if(workQueue.try_pop(task))
+    task();
+  else
+    std::this_thread::yield();
+}
 void ThreadPool::workerThread()
 {
   while(!done)

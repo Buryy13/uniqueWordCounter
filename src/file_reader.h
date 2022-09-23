@@ -1,10 +1,10 @@
 #pragma once
 
-#include <unordered_set>
-#include <string>
-#include <vector>
-#include <list>
 #include <future>
+#include <list>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
 #include "thread_pool.h"
 
@@ -21,6 +21,7 @@ public:
 		bool operator<(const Chunk& rhs) const { return id < rhs.id; }
 	};
 	using ListItr = std::list<Chunk>::iterator;
+
 	FileReader(const char* fName);
 	~FileReader();
 

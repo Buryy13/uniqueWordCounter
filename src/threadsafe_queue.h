@@ -1,9 +1,9 @@
 #pragma once
 
-#include <queue>
-#include <mutex>
 #include <condition_variable>
 #include <memory>
+#include <mutex>
+#include <queue>
 
 template <typename T>
 class ThreadSafeQueue
