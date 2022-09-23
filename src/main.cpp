@@ -16,9 +16,10 @@ int main(int argc, const char* argv[])
 		return -1;
 	}
 	fileReader.readFile();
+	std::this_thread::sleep_for(std::chrono::seconds(1));
 	fileReader.fixCorruptedWords();
 	fileReader.mergeWords();
-	fileReader.printWordsSize();
+	fileReader.printUniqueWordsNumber();
 
 	return 0;
 }
